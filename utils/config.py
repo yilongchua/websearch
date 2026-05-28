@@ -8,6 +8,9 @@ from typing import Any
 import yaml
 
 DEFAULT_CONFIG: dict[str, Any] = {
+    "runtime": {
+        "searxng_settings_path": "/etc/searxng/settings.yml",
+    },
     "server": {
         "api_host": "0.0.0.0",
         "api_port": 9000,
@@ -46,9 +49,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "crwl_binary": "crwl",
         "deep_crawl": "none",
         "deep_max_pages": 10,
-        "mcp_endpoint": "",
-        "mcp_tool_name": "crawl_url",
-        "mcp_timeout_seconds": 45.0,
         "use_library_fallback": True,
         "http_fallback_enabled": True,
     },
@@ -64,6 +64,20 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "debug": {
         "include_query_diagnostics": False,
+    },
+    "dashboard": {
+        "interval_seconds": 10.0,
+        "window_seconds": 86400,
+        "limit": 10,
+    },
+    "uat": {
+        "api_url": "http://localhost:9000/search",
+        "timeout_seconds": 120,
+        "queries": [
+            "latest enterprise browser security policy updates",
+            "state of AI safety evaluation benchmarks",
+            "recent supply chain resilience strategies in manufacturing",
+        ],
     },
 }
 

@@ -4,9 +4,12 @@ import argparse
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException
+from fastapi.encoders import jsonable_encoder
 
 from schema.models import SearchRequest, SearchResponse
 from utils.config import get_config_value
@@ -75,6 +78,10 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Websearch API", version="0.3.0", lifespan=lifespan)
 
+MCP_TOOL_NAME = "websearch.search"
+MCP_SERVER_NAME = "websearch"
+MCP_SERVER_VERSION = "0.3.0"
+
 
 @app.get("/health")
 async def health() -> dict[str, str]:
@@ -96,6 +103,85 @@ async def search(req: SearchRequest) -> dict:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     finally:
         semaphore.release()
+
+
+def _mcp_tool_schema() -> dict[str, Any]:
+    return {
+        "name": MCP_TOOL_NAME,
+        "description": "Run web search and extraction, returning JSON results.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "minLength": 1},
+                "write_markdown_package": {"type": "boolean", "default": True},
+                "package_name": {"type": ["string", "null"]},
+            },
+            "required": ["query"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def _mcp_response(rpc_id: Any, result: dict[str, Any]) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": rpc_id, "result": result}
+
+
+def _mcp_error(rpc_id: Any, code: int, message: str) -> dict[str, Any]:
+    return {"jsonrpc": "2.0", "id": rpc_id, "error": {"code": code, "message": message}}
+
+
+@app.post("/mcp")
+async def mcp_endpoint(payload: dict[str, Any]) -> dict[str, Any]:
+    rpc_id = payload.get("id")
+    method = str(payload.get("method") or "").strip()
+    params = payload.get("params") if isinstance(payload.get("params"), dict) else {}
+
+    if method == "initialize":
+        return _mcp_response(
+            rpc_id,
+            {
+                "protocolVersion": "2024-11-05",
+                "serverInfo": {"name": MCP_SERVER_NAME, "version": MCP_SERVER_VERSION},
+                "capabilities": {"tools": {}},
+            },
+        )
+
+    if method == "tools/list":
+        return _mcp_response(rpc_id, {"tools": [_mcp_tool_schema()]})
+
+    if method == "tools/call":
+        tool_name = str(params.get("name") or "").strip()
+        arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+        if tool_name != MCP_TOOL_NAME:
+            return _mcp_error(rpc_id, -32602, f"Unknown tool: {tool_name}")
+        query = str(arguments.get("query") or "").strip()
+        if not query:
+            return _mcp_error(rpc_id, -32602, "Missing required argument: query")
+
+        req = SearchRequest(
+            query=query,
+            write_markdown_package=bool(arguments.get("write_markdown_package", True)),
+            package_name=arguments.get("package_name"),
+        )
+        try:
+            result_payload = await search(req)
+        except HTTPException as exc:
+            return _mcp_error(rpc_id, -32000, f"Search failed: {exc.detail}")
+        encoded_payload = jsonable_encoder(result_payload)
+
+        return _mcp_response(
+            rpc_id,
+            {
+                "content": [{"type": "text", "text": json.dumps(encoded_payload, ensure_ascii=False)}],
+                "structuredContent": encoded_payload,
+                "isError": False,
+            },
+        )
+
+    if method == "ping":
+        return _mcp_response(rpc_id, {"ok": True, "ts": datetime.now(timezone.utc).isoformat()})
+
+    return _mcp_error(rpc_id, -32601, f"Method not found: {method}")
 
 
 def _api_base_url() -> str:
@@ -122,9 +208,9 @@ def cli() -> None:
 
     dashboard_logs_cmd = sub.add_parser("dashboard-logs", help="Emit JSON dashboard snapshots for docker logs")
     dashboard_logs_cmd.add_argument("--output-dir", default=None)
-    dashboard_logs_cmd.add_argument("--interval-seconds", type=float, default=10.0)
-    dashboard_logs_cmd.add_argument("--window-seconds", type=int, default=86400)
-    dashboard_logs_cmd.add_argument("--limit", type=int, default=10)
+    dashboard_logs_cmd.add_argument("--interval-seconds", type=float, default=None)
+    dashboard_logs_cmd.add_argument("--window-seconds", type=int, default=None)
+    dashboard_logs_cmd.add_argument("--limit", type=int, default=None)
 
     args = parser.parse_args()
 
@@ -143,9 +229,9 @@ def cli() -> None:
         output_dir = args.output_dir or str(get_config_value("service.output_dir", "/app/output"))
         run_dashboard_logs(
             output_dir=output_dir,
-            interval_seconds=args.interval_seconds,
-            window_seconds=args.window_seconds,
-            limit=args.limit,
+            interval_seconds=args.interval_seconds or float(get_config_value("dashboard.interval_seconds", 10.0)),
+            window_seconds=args.window_seconds or int(get_config_value("dashboard.window_seconds", 86400)),
+            limit=args.limit or int(get_config_value("dashboard.limit", 10)),
         )
         return
 

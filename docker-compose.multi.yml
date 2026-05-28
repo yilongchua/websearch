@@ -21,13 +21,7 @@ services:
     image: websearch:latest
     pull_policy: never
     environment:
-      - SEARXNG_BIND_HOST=0.0.0.0
-      - SEARXNG_BIND_PORT=8080
-      - WEBSEARCH_API_HOST=0.0.0.0
-      - WEBSEARCH_API_PORT=9000
       - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
-      - WEBSEARCH_OUTPUT_DIR=${WEBSEARCH_OUTPUT_DIR:-/app/output}
-      - SEARXNG_SETTINGS_PATH=${SEARXNG_SETTINGS_PATH:-/etc/searxng/settings.yml}
       - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-}
     volumes:
       - ./output:/app/output
@@ -63,7 +57,6 @@ services:
       - "10"
     environment:
       - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
-      - WEBSEARCH_OUTPUT_DIR=${WEBSEARCH_OUTPUT_DIR:-/app/output}
     volumes:
       - ./output:/app/output
       - ./config/config.yaml:/app/config/config.yaml:ro

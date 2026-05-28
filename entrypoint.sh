@@ -1,15 +1,37 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SEARXNG_SETTINGS_PATH="${SEARXNG_SETTINGS_PATH:-/etc/searxng/settings.yml}"
-SEARXNG_BIND_HOST="${SEARXNG_BIND_HOST:-0.0.0.0}"
-SEARXNG_BIND_PORT="${SEARXNG_BIND_PORT:-8080}"
-WEBSEARCH_API_HOST="${WEBSEARCH_API_HOST:-0.0.0.0}"
-WEBSEARCH_API_PORT="${WEBSEARCH_API_PORT:-9000}"
 SEARXNG_SECRET_KEY="${SEARXNG_SECRET_KEY:-}"
 
-export SEARXNG_SETTINGS_PATH
 export WEBSEARCH_CONFIG_PATH="${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}"
+
+readarray -t _runtime_values < <(python - <<'PY'
+from urllib.parse import urlparse
+
+from utils.config import get_config_value
+
+settings_path = str(get_config_value("runtime.searxng_settings_path", "/etc/searxng/settings.yml"))
+api_host = str(get_config_value("server.api_host", "0.0.0.0"))
+api_port = int(get_config_value("server.api_port", 9000))
+searxng_base_url = str(get_config_value("service.searxng_base_url", "http://127.0.0.1:8080"))
+parsed = urlparse(searxng_base_url)
+searxng_host = parsed.hostname or "0.0.0.0"
+searxng_port = parsed.port or 8080
+
+print(settings_path)
+print(api_host)
+print(api_port)
+print(searxng_host)
+print(searxng_port)
+PY
+)
+
+SEARXNG_SETTINGS_PATH="${_runtime_values[0]}"
+WEBSEARCH_API_HOST="${_runtime_values[1]}"
+WEBSEARCH_API_PORT="${_runtime_values[2]}"
+SEARXNG_BIND_HOST="${_runtime_values[3]}"
+SEARXNG_BIND_PORT="${_runtime_values[4]}"
+export SEARXNG_SETTINGS_PATH
 
 cleanup() {
   kill ${SEARX_PID:-0} >/dev/null 2>&1 || true

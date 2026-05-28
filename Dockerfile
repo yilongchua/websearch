@@ -7,13 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml \
-    SEARXNG_BIND_HOST=0.0.0.0 \
-    SEARXNG_BIND_PORT=8080 \
-    WEBSEARCH_API_HOST=0.0.0.0 \
-    WEBSEARCH_API_PORT=9000 \
-    WEBSEARCH_CONFIG_PATH=/app/config/config.yaml \
-    WEBSEARCH_OUTPUT_DIR=/app/output
+    WEBSEARCH_CONFIG_PATH=/app/config/config.yaml
 
 WORKDIR /app
 

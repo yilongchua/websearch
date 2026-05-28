@@ -137,6 +137,51 @@ def test_dashboard_route_not_mounted():
     assert client.get("/dashboard").status_code == 404
 
 
+def test_mcp_initialize():
+    client = TestClient(app)
+    response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"]["serverInfo"]["name"] == "websearch"
+    assert "tools" in body["result"]["capabilities"]
+
+
+def test_mcp_tools_list():
+    client = TestClient(app)
+    response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
+    assert response.status_code == 200
+    body = response.json()
+    tools = body["result"]["tools"]
+    assert isinstance(tools, list)
+    assert tools[0]["name"] == "websearch.search"
+
+
+def test_mcp_tools_call(monkeypatch: pytest.MonkeyPatch):
+    async def fake_run_query(*, query: str, write_markdown_package: bool = False, package_name: str | None = None):
+        return {
+            "query": query,
+            "generated_at": datetime.now(timezone.utc),
+            "total_results": 1,
+            "results": [{"title": "A", "url": "https://a", "snippet": "aa"}],
+        }
+
+    monkeypatch.setattr("main.run_query", fake_run_query)
+    client = TestClient(app)
+    response = client.post(
+        "/mcp",
+        json={
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "websearch.search", "arguments": {"query": "hello"}},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["result"]["isError"] is False
+    assert body["result"]["structuredContent"]["query"] == "hello"
+
+
 def test_searxng_query_retries_transient_timeout(monkeypatch: pytest.MonkeyPatch):
     class FakeResponse:
         def raise_for_status(self) -> None:

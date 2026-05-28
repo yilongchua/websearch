@@ -1,3 +1,6 @@
+runtime:
+  searxng_settings_path: "/etc/searxng/settings.yml"
+
 llm_endpoint:
   http:
     - http://localhost:1234/v1
@@ -41,13 +44,10 @@ search:
   engines: []
 
 crawler:
-  mode: "cli"           # cli | library | mcp
+  mode: "cli"           # cli | library
   crwl_binary: "crwl"
   deep_crawl: "none"    # none | bfs | dfs
   deep_max_pages: 10
-  mcp_endpoint: ""      # e.g. http://127.0.0.1:8001/mcp/call
-  mcp_tool_name: "crawl_url"
-  mcp_timeout_seconds: 45.0
   use_library_fallback: true
   http_fallback_enabled: true
 
@@ -63,3 +63,16 @@ retention:
 
 debug:
   include_query_diagnostics: false
+
+dashboard:
+  interval_seconds: 10.0
+  window_seconds: 86400
+  limit: 10
+
+uat:
+  api_url: "http://localhost:9000/search"
+  timeout_seconds: 120
+  queries:
+    - "latest enterprise browser security policy updates"
+    - "state of AI safety evaluation benchmarks"
+    - "recent supply chain resilience strategies in manufacturing"

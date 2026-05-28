@@ -3,20 +3,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import httpx
 
+sys.path.append(str(Path(__file__).resolve().parents[1]))
+from utils.config import get_config_value
 
-API_URL = "http://localhost:9000/search"
-TIMEOUT_SECONDS = 120
 
-# 3 separate queries intended to run concurrently to trigger nginx load balancing.
-QUERIES = [
-    "latest enterprise browser security policy updates",
-    "state of AI safety evaluation benchmarks",
-    "recent supply chain resilience strategies in manufacturing",
-]
+API_URL = str(get_config_value("uat.api_url", "http://localhost:9000/search"))
+TIMEOUT_SECONDS = float(get_config_value("uat.timeout_seconds", 120))
+QUERIES = list(
+    get_config_value(
+        "uat.queries",
+        [
+            "latest enterprise browser security policy updates",
+            "state of AI safety evaluation benchmarks",
+            "recent supply chain resilience strategies in manufacturing",
+        ],
+    )
+)
 
 
 @dataclass

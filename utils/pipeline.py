@@ -134,60 +134,6 @@ async def _crawl_with_library(url: str) -> str:
     raise RuntimeError(f"crawl4ai library mode failed after {max_attempts} attempt(s): {last_error}") from last_error
 
 
-def _extract_text_from_mcp_payload(payload: Any) -> str:
-    if isinstance(payload, str):
-        return payload.strip()
-    if isinstance(payload, dict):
-        for key in ("markdown", "content_markdown", "content", "text", "result"):
-            if key in payload:
-                extracted = _extract_text_from_mcp_payload(payload[key])
-                if extracted:
-                    return extracted
-        content = payload.get("content")
-        if isinstance(content, list):
-            chunks: list[str] = []
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "text":
-                    text = str(item.get("text") or "").strip()
-                    if text:
-                        chunks.append(text)
-                elif isinstance(item, str) and item.strip():
-                    chunks.append(item.strip())
-            if chunks:
-                return "\n\n".join(chunks)
-    if isinstance(payload, list):
-        chunks = [_extract_text_from_mcp_payload(item) for item in payload]
-        merged = "\n\n".join(chunk for chunk in chunks if chunk)
-        return merged.strip()
-    return ""
-
-
-async def _crawl_with_mcp(url: str) -> str:
-    endpoint = str(get_config_value("crawler.mcp_endpoint", "")).strip()
-    if not endpoint:
-        raise RuntimeError("crawler.mcp_endpoint is required when crawler.mode=mcp")
-
-    deep_mode = str(get_config_value("crawler.deep_crawl", "none")).strip().lower()
-    payload: dict[str, Any] = {
-        "tool": str(get_config_value("crawler.mcp_tool_name", "crawl_url")),
-        "input": {"url": url, "output": "markdown"},
-    }
-    if deep_mode in {"bfs", "dfs"}:
-        payload["input"]["deep_crawl"] = deep_mode
-        payload["input"]["max_pages"] = int(get_config_value("crawler.deep_max_pages", 10))
-
-    timeout_seconds = float(get_config_value("crawler.mcp_timeout_seconds", 45.0))
-    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
-        response = await client.post(endpoint, json=payload)
-        response.raise_for_status()
-        body = response.json()
-
-    markdown = _extract_text_from_mcp_payload(body)
-    if not markdown:
-        raise RuntimeError("MCP crawler returned empty output")
-    return markdown[: int(get_config_value("search.extract_max_chars", 6000))]
-
-
 async def _http_fallback_extract(url: str) -> tuple[str, dict[str, str] | None]:
     if not bool(get_config_value("crawler.http_fallback_enabled", True)):
         return "", {"error_type": "Disabled", "error_message": "http_fallback_disabled"}
@@ -329,7 +275,7 @@ async def _extract_best_content(
                         status="failed",
                         error=lib_error,
                     )
-    elif mode == "library":
+    else:
         lib_start = time.perf_counter()
         append_event(output_dir=output_dir, event={"event_type": "source_attempted", "query_id": query_id, "url": url, "mode": "library", "status": "attempted"})
         try:
@@ -366,77 +312,6 @@ async def _extract_best_content(
                 status="failed",
                 error=error,
             )
-    else:
-        mcp_start = time.perf_counter()
-        append_event(output_dir=output_dir, event={"event_type": "source_attempted", "query_id": query_id, "url": url, "mode": "mcp", "status": "attempted"})
-        try:
-            mcp_result = await _crawl_with_mcp(url)
-            mcp_quality = assess_content_quality(mcp_result)
-            mcp_score = float(mcp_quality.get("quality_score") or 0.0)
-            mcp_ms = (time.perf_counter() - mcp_start) * 1000
-            source_statuses.append({"url": url, "mode": "mcp", "status": "succeeded", "duration_ms": round(mcp_ms, 2), "quality_score": mcp_score})
-            _record_source_event(
-                output_dir=output_dir,
-                query_id=query_id,
-                url=url,
-                mode="mcp",
-                event_type="source_succeeded",
-                duration_ms=mcp_ms,
-                status="succeeded",
-                quality_score=mcp_score,
-            )
-            if mcp_score >= crawler_threshold:
-                cleaned = str(mcp_quality.get("cleaned_text") or "").strip()
-                return cleaned or mcp_result, mcp_quality
-            candidates.append((mcp_result, mcp_quality))
-        except Exception as exc:
-            mcp_ms = (time.perf_counter() - mcp_start) * 1000
-            error = _error_payload(exc)
-            source_statuses.append({"url": url, "mode": "mcp", "status": "failed", "duration_ms": round(mcp_ms, 2), **error})
-            _record_source_event(
-                output_dir=output_dir,
-                query_id=query_id,
-                url=url,
-                mode="mcp",
-                event_type="source_failed",
-                duration_ms=mcp_ms,
-                status="failed",
-                error=error,
-            )
-            if use_library_fallback:
-                lib_start = time.perf_counter()
-                append_event(output_dir=output_dir, event={"event_type": "source_attempted", "query_id": query_id, "url": url, "mode": "library", "status": "attempted"})
-                try:
-                    lib_result = await _crawl_with_library(url)
-                    lib_quality = assess_content_quality(lib_result)
-                    lib_score = float(lib_quality.get("quality_score") or 0.0)
-                    lib_ms = (time.perf_counter() - lib_start) * 1000
-                    source_statuses.append({"url": url, "mode": "library", "status": "succeeded", "duration_ms": round(lib_ms, 2), "quality_score": lib_score})
-                    _record_source_event(
-                        output_dir=output_dir,
-                        query_id=query_id,
-                        url=url,
-                        mode="library",
-                        event_type="source_succeeded",
-                        duration_ms=lib_ms,
-                        status="succeeded",
-                        quality_score=lib_score,
-                    )
-                    candidates.append((lib_result, lib_quality))
-                except Exception as lib_exc:
-                    lib_ms = (time.perf_counter() - lib_start) * 1000
-                    lib_error = _error_payload(lib_exc)
-                    source_statuses.append({"url": url, "mode": "library", "status": "failed", "duration_ms": round(lib_ms, 2), **lib_error})
-                    _record_source_event(
-                        output_dir=output_dir,
-                        query_id=query_id,
-                        url=url,
-                        mode="library",
-                        event_type="source_failed",
-                        duration_ms=lib_ms,
-                        status="failed",
-                        error=lib_error,
-                    )
 
     if not candidates:
         return "", {}
