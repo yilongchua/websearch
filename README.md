@@ -92,6 +92,14 @@ search:
   searxng_retry_backoff_seconds: 1.0
 ```
 
+Search admission control also lives in `config/config.yaml`:
+```yaml
+server:
+  max_concurrent_requests: 8
+  queue_timeout_seconds: 2.0
+  request_timeout_seconds: 120.0
+```
+
 API:
 - `http://localhost:9000/health`
 - `http://localhost:9000/search`
@@ -106,6 +114,17 @@ pre-commit install
 Run a full secret scan before pushing:
 ```bash
 pre-commit run --all-files
+```
+
+## Tests
+Run local tests:
+```bash
+pytest -q
+```
+
+Live endpoint tests are skipped by default. Enable them against a running endpoint:
+```bash
+WEBSEARCH_LIVE_TEST_URL=http://localhost:9000 pytest -q -m live
 ```
 
 ## API example

@@ -1,10 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
+
 import httpx
 import pytest
 
-BASE_URL = "http://192.168.1.39:9000"
+BASE_URL = os.getenv("WEBSEARCH_LIVE_TEST_URL")
+
+pytestmark = [
+    pytest.mark.live,
+    pytest.mark.skipif(
+        not BASE_URL,
+        reason="set WEBSEARCH_LIVE_TEST_URL to run live endpoint tests",
+    ),
+]
 
 
 def test_health():

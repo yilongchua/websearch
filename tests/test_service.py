@@ -4,8 +4,10 @@ import asyncio
 from datetime import datetime, timezone
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
+import main as main_module
 from main import app
 from schema.models import SearchRequest
 from utils.cleanup import assess_content_quality
@@ -71,6 +73,63 @@ def test_search_endpoint_package_paths(monkeypatch: pytest.MonkeyPatch):
     assert package is not None
     assert package["markdown_path"].endswith(".md")
     assert package["json_path"].endswith(".json")
+
+
+def test_search_endpoint_request_timeout(monkeypatch: pytest.MonkeyPatch):
+    async def slow_run_query(*, query: str, write_markdown_package: bool = False, package_name: str | None = None):
+        await asyncio.sleep(1)
+        return {
+            "query": query,
+            "generated_at": datetime.now(timezone.utc),
+            "total_results": 0,
+            "results": [],
+        }
+
+    def fake_config(path: str, default):
+        mapping = {
+            "server.max_concurrent_requests": 1,
+            "server.queue_timeout_seconds": 1.0,
+            "server.request_timeout_seconds": 0.01,
+        }
+        return mapping.get(path, default)
+
+    monkeypatch.setattr("main.run_query", slow_run_query)
+    monkeypatch.setattr("main.get_config_value", fake_config)
+    monkeypatch.setattr("main._SEARCH_SEMAPHORE", None)
+    monkeypatch.setattr("main._SEARCH_SEMAPHORE_LIMIT", None)
+    client = TestClient(app)
+
+    response = client.post("/search", json={"query": "hello"})
+
+    assert response.status_code == 504
+    assert response.json()["detail"]["error_code"] == "search_timeout"
+
+
+def test_search_capacity_exhausted(monkeypatch: pytest.MonkeyPatch):
+    def fake_config(path: str, default):
+        mapping = {
+            "server.max_concurrent_requests": 1,
+            "server.queue_timeout_seconds": 0.01,
+        }
+        return mapping.get(path, default)
+
+    async def exercise_capacity_limit() -> None:
+        semaphore = main_module._search_semaphore()
+        await semaphore.acquire()
+        try:
+            with pytest.raises(HTTPException) as exc_info:
+                await main_module._acquire_search_slot()
+        finally:
+            semaphore.release()
+
+        assert exc_info.value.status_code == 503
+        assert exc_info.value.detail["error_code"] == "search_capacity_exhausted"
+
+    monkeypatch.setattr("main.get_config_value", fake_config)
+    monkeypatch.setattr("main._SEARCH_SEMAPHORE", None)
+    monkeypatch.setattr("main._SEARCH_SEMAPHORE_LIMIT", None)
+
+    asyncio.run(exercise_capacity_limit())
 
 
 def test_dashboard_route_not_mounted():

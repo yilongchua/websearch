@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 from contextlib import asynccontextmanager
 
@@ -11,6 +12,56 @@ from schema.models import SearchRequest, SearchResponse
 from utils.config import get_config_value
 from utils.pipeline import initialize_shared_clients, run_query, shutdown_shared_clients
 from utils.terminal_dashboard import run_dashboard_logs
+
+_SEARCH_SEMAPHORE: asyncio.Semaphore | None = None
+_SEARCH_SEMAPHORE_LIMIT: int | None = None
+
+
+def _search_semaphore() -> asyncio.Semaphore:
+    global _SEARCH_SEMAPHORE, _SEARCH_SEMAPHORE_LIMIT
+
+    limit = max(1, int(get_config_value("server.max_concurrent_requests", 8)))
+    if _SEARCH_SEMAPHORE is None or _SEARCH_SEMAPHORE_LIMIT != limit:
+        _SEARCH_SEMAPHORE = asyncio.Semaphore(limit)
+        _SEARCH_SEMAPHORE_LIMIT = limit
+    return _SEARCH_SEMAPHORE
+
+
+async def _acquire_search_slot() -> asyncio.Semaphore:
+    semaphore = _search_semaphore()
+    queue_timeout = max(0.0, float(get_config_value("server.queue_timeout_seconds", 2.0)))
+    try:
+        await asyncio.wait_for(semaphore.acquire(), timeout=queue_timeout)
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error_code": "search_capacity_exhausted",
+                "message": "search service is at capacity; retry later",
+            },
+        ) from exc
+    return semaphore
+
+
+async def _run_query_with_timeout(req: SearchRequest) -> dict:
+    request_timeout = float(get_config_value("server.request_timeout_seconds", 120.0))
+    query_task = run_query(
+        query=req.query,
+        write_markdown_package=req.write_markdown_package,
+        package_name=req.package_name,
+    )
+    if request_timeout <= 0:
+        return await query_task
+    try:
+        return await asyncio.wait_for(query_task, timeout=request_timeout)
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail={
+                "error_code": "search_timeout",
+                "message": "search request exceeded the configured timeout",
+            },
+        ) from exc
 
 
 @asynccontextmanager
@@ -36,15 +87,15 @@ async def health() -> dict[str, str]:
 
 @app.post("/search", response_model=SearchResponse)
 async def search(req: SearchRequest) -> dict:
+    semaphore = await _acquire_search_slot()
     try:
-        payload = await run_query(
-            query=req.query,
-            write_markdown_package=req.write_markdown_package,
-            package_name=req.package_name,
-        )
-        return payload
+        return await _run_query_with_timeout(req)
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        semaphore.release()
 
 
 def _api_base_url() -> str:

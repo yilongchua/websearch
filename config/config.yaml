@@ -13,6 +13,9 @@ models:
 server:
   api_host: "0.0.0.0"
   api_port: 9000
+  max_concurrent_requests: 8
+  queue_timeout_seconds: 2.0
+  request_timeout_seconds: 120.0
 
 service:
   searxng_base_url: "http://127.0.0.1:8080"
