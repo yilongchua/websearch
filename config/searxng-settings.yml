@@ -12,7 +12,7 @@ search:
     - json
 
 server:
-  secret_key: "searxng-secret"
+  secret_key: "__SEARXNG_SECRET_KEY__"
   limiter: false
   image_proxy: true
   method: "GET"

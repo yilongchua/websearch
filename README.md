@@ -19,6 +19,7 @@ Single Docker service with:
 ```bash
 cd /Users/ryan_chua/Desktop/websearch
 cp config/.env.example .env
+python -c "import secrets; print(f'SEARXNG_SECRET_KEY={secrets.token_hex(32)}')" >> .env
 docker compose up -d --build
 ```
 
@@ -94,6 +95,18 @@ search:
 API:
 - `http://localhost:9000/health`
 - `http://localhost:9000/search`
+
+## Secret scanning hooks
+Install pre-commit and enable hooks:
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+Run a full secret scan before pushing:
+```bash
+pre-commit run --all-files
+```
 
 ## API example
 ```bash

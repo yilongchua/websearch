@@ -28,6 +28,7 @@ services:
       - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
       - WEBSEARCH_OUTPUT_DIR=${WEBSEARCH_OUTPUT_DIR:-/app/output}
       - SEARXNG_SETTINGS_PATH=${SEARXNG_SETTINGS_PATH:-/etc/searxng/settings.yml}
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-}
     volumes:
       - ./output:/app/output
       - ./config/config.yaml:/app/config/config.yaml:ro

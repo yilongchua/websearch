@@ -60,7 +60,7 @@ search:
     - json                # JSON is what our API consumes
 
 server:
-  secret_key: "searxng-secret"
+  secret_key: "${SEARXNG_SECRET_KEY}"
   limiter: false          # Disable rate limiting for API usage
   image_proxy: true       # Proxy images through SearXNG
   method: "GET"           # Use GET for search queries
