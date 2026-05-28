@@ -1,0 +1,72 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: websearch-nginx
+    ports:
+      - "${WEBSEARCH_API_HOST_PORT:-9000}:9000"
+    volumes:
+      - ./nginx.multi.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      websearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  websearch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SEARXNG_GIT_REF: ${SEARXNG_GIT_REF:-master}
+        CRAWL4AI_PRE_RELEASE: ${CRAWL4AI_PRE_RELEASE:-false}
+    image: websearch:latest
+    pull_policy: never
+    environment:
+      - SEARXNG_BIND_HOST=0.0.0.0
+      - SEARXNG_BIND_PORT=8080
+      - WEBSEARCH_API_HOST=0.0.0.0
+      - WEBSEARCH_API_PORT=9000
+      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
+      - WEBSEARCH_OUTPUT_DIR=${WEBSEARCH_OUTPUT_DIR:-/app/output}
+      - SEARXNG_SETTINGS_PATH=${SEARXNG_SETTINGS_PATH:-/etc/searxng/settings.yml}
+    volumes:
+      - ./output:/app/output
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config/searxng-settings.yml:/etc/searxng/settings.yml:ro
+      - ./prompt:/app/prompt:ro
+    expose:
+      - "9000"
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  dashboard_logs:
+    image: websearch:latest
+    pull_policy: never
+    container_name: websearch-dashboard-logs
+    command:
+      - python
+      - /app/main.py
+      - dashboard-logs
+      - --output-dir
+      - /app/output
+      - --interval-seconds
+      - "10"
+      - --window-seconds
+      - "86400"
+      - --limit
+      - "10"
+    environment:
+      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
+      - WEBSEARCH_OUTPUT_DIR=${WEBSEARCH_OUTPUT_DIR:-/app/output}
+    volumes:
+      - ./output:/app/output
+      - ./config/config.yaml:/app/config/config.yaml:ro
+    restart: unless-stopped
+    depends_on:
+      websearch:
+        condition: service_healthy

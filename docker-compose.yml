@@ -1,0 +1,32 @@
+services:
+  websearch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        SEARXNG_GIT_REF: ${SEARXNG_GIT_REF:-master}
+        CRAWL4AI_PRE_RELEASE: ${CRAWL4AI_PRE_RELEASE:-false}
+    container_name: ${WEBSEARCH_CONTAINER_NAME:-websearch}
+    environment:
+      - SEARXNG_BIND_HOST=0.0.0.0
+      - SEARXNG_BIND_PORT=8080
+      - WEBSEARCH_API_HOST=0.0.0.0
+      - WEBSEARCH_API_PORT=9000
+      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
+      - WEBSEARCH_OUTPUT_DIR=${WEBSEARCH_OUTPUT_DIR:-/app/output}
+      - SEARXNG_SETTINGS_PATH=${SEARXNG_SETTINGS_PATH:-/etc/searxng/settings.yml}
+    ports:
+      - "${WEBSEARCH_API_HOST_PORT:-9000}:9000"
+      - "${WEBSEARCHSEARXNG_BIND_PORT:-8080}:8080"
+    volumes:
+      - ./output:/app/output
+      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config/searxng-settings.yml:/etc/searxng/settings.yml:ro
+      - ./prompt:/app/prompt:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
