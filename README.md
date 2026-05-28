@@ -1,12 +1,5 @@
 # Websearch (API-Only, JSON-Only)
 
-Multi docker instance:
-Run it
-Recreate stack so nginx config is applied:
-- docker compose -f docker-compose.multi.yml up -d --build --scale websearch=3 --remove-orphans
-Run UAT:
-- python scripts/uat_lb_live_test.py
-
 Single Docker service with:
 - Local SearXNG process (internal only)
 - Local Crawl4AI installation (`crwl` CLI first)
@@ -29,25 +22,74 @@ cp config/.env.example .env
 docker compose up -d --build
 ```
 
-## Start (3-instance local load-balanced setup)
+## Start load-balanced setup
 ```bash
 docker compose -f docker-compose.multi.yml up -d --build --scale websearch=3 --remove-orphans
 ```
 This exposes only `localhost:9000` through nginx and round-robins across the scaled `websearch` containers.
 
-Scale up or down:
+## Multi-container commands
+Start or recreate with 3 websearch containers:
+```bash
+docker compose -f docker-compose.multi.yml up -d --build --scale websearch=3 --remove-orphans
+```
+
+Increase to 5 websearch containers:
 ```bash
 ./scripts/scale_websearch.sh 5
+```
+
+Increase to 8 websearch containers for agentic/deep-research bursts:
+```bash
+./scripts/scale_websearch.sh 8
+```
+
+Decrease to 2 websearch containers:
+```bash
 ./scripts/scale_websearch.sh 2
 ```
 
-Equivalent raw Compose commands:
+Decrease to 1 websearch container:
+```bash
+./scripts/scale_websearch.sh 1
+```
+
+Run the load-balancer UAT:
+```bash
+python scripts/uat_lb_live_test.py
+```
+
+Check running containers:
+```bash
+docker compose -f docker-compose.multi.yml ps
+```
+
+Watch dashboard logs:
+```bash
+docker compose -f docker-compose.multi.yml logs -f dashboard_logs
+```
+
+Equivalent raw Compose commands for manual scaling:
 ```bash
 docker compose -f docker-compose.multi.yml up -d --scale websearch=5 websearch
 docker compose -f docker-compose.multi.yml up -d --no-deps --force-recreate nginx
 ```
 
 The nginx recreate step makes nginx re-resolve the current set of `websearch` replica IPs.
+
+Recommended container counts:
+- Light use: 3 containers
+- Agentic use: 5-8 containers
+- Deep research: 8-10 containers
+- Heavy local max: 10-12 containers, only if CPU/RAM stay healthy
+
+SearXNG timeout and retry tuning lives in `config/config.yaml`:
+```yaml
+search:
+  searxng_timeout_seconds: 30.0
+  searxng_max_retries: 2
+  searxng_retry_backoff_seconds: 1.0
+```
 
 API:
 - `http://localhost:9000/health`

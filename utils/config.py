@@ -22,6 +22,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "search": {
         "max_results": 5,
+        "searxng_timeout_seconds": 30.0,
+        "searxng_max_retries": 2,
+        "searxng_retry_backoff_seconds": 1.0,
         "extract_top_k": 2,
         "extract_max_chars": 6000,
         "extract_timeout_seconds": 45.0,

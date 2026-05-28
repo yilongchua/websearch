@@ -19,6 +19,10 @@ from .packaging import write_package
 _SEARX_CLIENT: httpx.AsyncClient | None = None
 
 
+def _searxng_timeout_seconds() -> float:
+    return float(get_config_value("search.searxng_timeout_seconds", 30.0))
+
+
 def _html_to_text(html: str) -> str:
     text = re.sub(r"(?is)<script.*?>.*?</script>", " ", html)
     text = re.sub(r"(?is)<style.*?>.*?</style>", " ", text)
@@ -31,6 +35,13 @@ def _error_payload(exc: Exception) -> dict[str, str]:
         "error_type": exc.__class__.__name__,
         "error_message": str(exc),
     }
+
+
+def _is_retryable_searxng_error(exc: Exception) -> bool:
+    if isinstance(exc, httpx.HTTPStatusError):
+        status_code = exc.response.status_code
+        return status_code == 408 or status_code == 429 or status_code >= 500
+    return isinstance(exc, (httpx.TimeoutException, httpx.TransportError))
 
 
 def _record_source_event(
@@ -333,15 +344,29 @@ async def _query_searxng(query: str) -> list[dict[str, Any]]:
     if isinstance(engines, list) and engines:
         params["engines"] = ",".join(str(item).strip() for item in engines if str(item).strip())
 
-    if _SEARX_CLIENT is not None:
-        response = await _SEARX_CLIENT.get(endpoint, params=params)
-        response.raise_for_status()
-        body = response.json()
+    max_retries = max(0, int(get_config_value("search.searxng_max_retries", 2)))
+    retry_backoff_seconds = max(0.0, float(get_config_value("search.searxng_retry_backoff_seconds", 1.0)))
+    last_exc: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            if _SEARX_CLIENT is not None:
+                response = await _SEARX_CLIENT.get(endpoint, params=params)
+                response.raise_for_status()
+                body = response.json()
+            else:
+                async with httpx.AsyncClient(timeout=_searxng_timeout_seconds()) as client:
+                    response = await client.get(endpoint, params=params)
+                    response.raise_for_status()
+                    body = response.json()
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries or not _is_retryable_searxng_error(exc):
+                raise
+            await asyncio.sleep(retry_backoff_seconds * (attempt + 1))
     else:
-        async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.get(endpoint, params=params)
-            response.raise_for_status()
-            body = response.json()
+        raise RuntimeError("SearXNG query failed") from last_exc
 
     max_results = int(get_config_value("search.max_results", 5))
     raw_results = body.get("results", []) if isinstance(body, dict) else []
@@ -493,7 +518,7 @@ async def run_query(*, query: str, write_markdown_package: bool = True, package_
 async def initialize_shared_clients() -> None:
     global _SEARX_CLIENT
     if _SEARX_CLIENT is None:
-        _SEARX_CLIENT = httpx.AsyncClient(timeout=20.0)
+        _SEARX_CLIENT = httpx.AsyncClient(timeout=_searxng_timeout_seconds())
 
 
 async def shutdown_shared_clients() -> None:
