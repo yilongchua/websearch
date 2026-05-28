@@ -55,8 +55,8 @@ Sidecar:
 | 4) Enrichment phase (top_k, semaphore bounded)                                 |
 |    - _extract_best_content(url):                                                |
 |      a) HTTP fallback first (fast-path threshold)                              |
-|      b) CLI crawler (or library mode)                                           |
-|      c) optional library fallback if CLI fails                                  |
+|      b) CLI crawler, MCP crawler, or library mode                               |
+|      c) optional library fallback if CLI/MCP fails                              |
 |    - assess_content_quality                                                     |
 |    - pick best candidate                                                        |
 |    - log source_attempted/succeeded/failed events with timing + errors          |

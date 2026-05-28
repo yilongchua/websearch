@@ -2,7 +2,7 @@
 
 Single Docker service with:
 - Local SearXNG process (internal only)
-- Local Crawl4AI installation (`crwl` CLI first)
+- Local Crawl4AI installation (`crwl` CLI) with optional MCP crawler mode
 - One HTTP API endpoint: `POST /search`
 - Always JSON response (optional markdown/json package file paths in JSON)
 
@@ -98,6 +98,16 @@ server:
   max_concurrent_requests: 8
   queue_timeout_seconds: 2.0
   request_timeout_seconds: 120.0
+```
+
+Crawler mode selection (onboarding-friendly MCP option):
+```yaml
+crawler:
+  mode: "mcp"   # cli | library | mcp
+  mcp_endpoint: "http://127.0.0.1:8001/mcp/call"
+  mcp_tool_name: "crawl_url"
+  mcp_timeout_seconds: 45.0
+  use_library_fallback: true
 ```
 
 API:

@@ -41,10 +41,13 @@ search:
   engines: []
 
 crawler:
-  mode: "cli"           # cli | library
+  mode: "cli"           # cli | library | mcp
   crwl_binary: "crwl"
   deep_crawl: "none"    # none | bfs | dfs
   deep_max_pages: 10
+  mcp_endpoint: ""      # e.g. http://127.0.0.1:8001/mcp/call
+  mcp_tool_name: "crawl_url"
+  mcp_timeout_seconds: 45.0
   use_library_fallback: true
   http_fallback_enabled: true
 
