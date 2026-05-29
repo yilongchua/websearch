@@ -211,6 +211,7 @@ def cli() -> None:
     dashboard_logs_cmd.add_argument("--interval-seconds", type=float, default=None)
     dashboard_logs_cmd.add_argument("--window-seconds", type=int, default=None)
     dashboard_logs_cmd.add_argument("--limit", type=int, default=None)
+    dashboard_logs_cmd.add_argument("--format", choices=["table", "json"], default=None)
 
     args = parser.parse_args()
 
@@ -232,6 +233,7 @@ def cli() -> None:
             interval_seconds=args.interval_seconds or float(get_config_value("dashboard.interval_seconds", 10.0)),
             window_seconds=args.window_seconds or int(get_config_value("dashboard.window_seconds", 86400)),
             limit=args.limit or int(get_config_value("dashboard.limit", 10)),
+            output_format=args.format or str(get_config_value("dashboard.output_format", "table")),
         )
         return
 

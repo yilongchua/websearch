@@ -5,6 +5,11 @@ SEARXNG_SECRET_KEY="${SEARXNG_SECRET_KEY:-}"
 
 export WEBSEARCH_CONFIG_PATH="${WEBSEARCH_CONFIG_PATH:-/app/config.yaml}"
 
+# If a command is provided (e.g., dashboard-logs), run it directly.
+if [ "$#" -gt 0 ]; then
+  exec "$@"
+fi
+
 readarray -t _runtime_values < <(python - <<'PY'
 from urllib.parse import urlparse
 

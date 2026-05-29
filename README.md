@@ -150,8 +150,9 @@ Dashboard snapshots:
 python main.py dashboard-logs \
   --output-dir /app/output \
   --interval-seconds 10 \
-  --window-seconds 86400 \
-  --limit 10
+  --window-seconds 10800 \
+  --limit 10 \
+  --format table
 ```
 
 ## Load-Balanced Mode

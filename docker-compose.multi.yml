@@ -53,9 +53,11 @@ services:
       - --interval-seconds
       - "10"
       - --window-seconds
-      - "86400"
+      - "10800"
       - --limit
       - "10"
+      - --format
+      - "table"
     environment:
       - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config.yaml}
     volumes:

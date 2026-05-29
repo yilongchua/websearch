@@ -400,13 +400,14 @@ async def _enrich_results(
     output_dir: str,
     source_statuses: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    top_k = max(0, min(int(get_config_value("search.extract_top_k", 2)), len(results)))
-    if top_k == 0:
+    target_successes = max(0, min(int(get_config_value("search.extract_top_k", 2)), len(results)))
+    if target_successes == 0:
         return results
 
-    sem = asyncio.Semaphore(int(get_config_value("search.extract_max_workers", 2)))
+    max_workers = max(1, int(get_config_value("search.extract_max_workers", 2)))
+    sem = asyncio.Semaphore(max_workers)
 
-    async def worker(index: int) -> None:
+    async def worker(index: int) -> bool:
         async with sem:
             extracted, quality = await _extract_best_content(
                 results[index]["url"],
@@ -419,8 +420,18 @@ async def _enrich_results(
                 results[index]["extracted_content_quality"] = quality
                 results[index]["content_quality_score"] = float(quality.get("quality_score") or 0.0)
                 results[index]["content_quality_reasons"] = quality.get("quality_reasons", [])
+                return True
+            return False
 
-    await asyncio.gather(*(worker(i) for i in range(top_k)))
+    successes = 0
+    next_index = 0
+    total = len(results)
+    while next_index < total and successes < target_successes:
+        batch_end = min(total, next_index + max_workers)
+        batch_indices = list(range(next_index, batch_end))
+        batch_successes = await asyncio.gather(*(worker(i) for i in batch_indices))
+        successes += sum(1 for item in batch_successes if item)
+        next_index = batch_end
     return results
 
 

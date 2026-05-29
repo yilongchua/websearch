@@ -82,7 +82,7 @@ dashboard_logs container
   command: python /app/main.py dashboard-logs ...
             |
             v
-stdout JSON snapshots every N seconds
+stdout dashboard snapshots (table or JSON) every N seconds
             |
             v
 docker compose -f docker-compose.multi.yml logs -f dashboard_logs

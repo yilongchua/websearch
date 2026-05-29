@@ -12,7 +12,7 @@ from typing import Any
 
 
 def utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _to_epoch(ts: str) -> float:

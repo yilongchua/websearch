@@ -264,3 +264,40 @@ def test_write_package_generates_unique_dirs(tmp_path: Path):
     assert Path(package_one["markdown_path"]).exists()
     assert Path(package_two["json_path"]).exists()
     assert Path(package_two["markdown_path"]).exists()
+
+
+def test_enrich_results_skips_failed_sources_and_continues_until_top_k(monkeypatch, tmp_path: Path):
+    results = [
+        {"title": "one", "url": "https://one.example", "snippet": "one"},
+        {"title": "two", "url": "https://two.example", "snippet": "two"},
+        {"title": "three", "url": "https://three.example", "snippet": "three"},
+    ]
+
+    async def fake_extract(url: str, *, query_id: str, output_dir: str, source_statuses: list[dict]):
+        if "one.example" in url:
+            return "", {}
+        return f"content for {url}", {"quality_score": 0.9, "quality_reasons": ["ok"]}
+
+    def fake_config(path: str, default):
+        mapping = {
+            "search.extract_top_k": 2,
+            "search.extract_max_workers": 1,
+        }
+        return mapping.get(path, default)
+
+    monkeypatch.setattr(pipeline, "_extract_best_content", fake_extract)
+    monkeypatch.setattr(pipeline, "get_config_value", fake_config)
+
+    enriched = asyncio.run(
+        pipeline._enrich_results(
+            results,
+            query_id="q1",
+            output_dir=str(tmp_path),
+            source_statuses=[],
+        )
+    )
+
+    # First candidate failed and was filtered out; next two were used to satisfy top_k=2 successes.
+    assert "extracted_content" not in enriched[0]
+    assert enriched[1]["extracted_content"].startswith("content for https://two.example")
+    assert enriched[2]["extracted_content"].startswith("content for https://three.example")

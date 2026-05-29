@@ -77,7 +77,7 @@ Sidecar:
 The dashboard is intentionally non-web and non-interactive in containers.
 
 - Producer command:
-  - `python /app/main.py dashboard-logs --output-dir /app/output --interval-seconds 10 --window-seconds 86400 --limit 10`
+  - `python /app/main.py dashboard-logs --output-dir /app/output --interval-seconds 10 --window-seconds 10800 --limit 10 --format table`
 - Multi-instance consumer command:
   - `docker compose -f docker-compose.multi.yml logs -f dashboard_logs`
 
