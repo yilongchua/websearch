@@ -453,7 +453,7 @@ The cleanup prompt defines rules for an LLM-based content cleaner:
 
 ### Docker Compose (Recommended)
 ```bash
-cp config/.env.example .env
+cp .env.example .env
 docker compose up -d --build
 ```
 

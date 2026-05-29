@@ -68,12 +68,14 @@ Timeouts are not pessimism; they are optimism with an exit strategy.
 
 ```bash
 cd /Users/ryan_chua/Desktop/websearch
-cp config/.env.example .env
-python -c "import secrets; print(f'SEARXNG_SECRET_KEY={secrets.token_hex(32)}')" >> .env
+cp .env.example .env
+echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" >> .env
+# fallback if openssl is unavailable:
+# python -c "import secrets; print(f'SEARXNG_SECRET_KEY={secrets.token_hex(32)}')" >> .env
 docker compose up -d --build
 ```
 
-`SEARXNG_SECRET_KEY` is a local app secret for SearXNG, not a third-party API key.
+`SEARXNG_SECRET_KEY` is still worth keeping random even for local runs (the port is not secret; this key is for app-level signing/security).
 
 Check it:
 
