@@ -21,12 +21,12 @@ services:
     image: websearch:latest
     pull_policy: never
     environment:
-      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
+      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config.yaml}
       - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-}
     volumes:
       - ./output:/app/output
-      - ./config/config.yaml:/app/config/config.yaml:ro
-      - ./config/searxng-settings.yml:/etc/searxng/settings.yml:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
       - ./prompt:/app/prompt:ro
     expose:
       - "9000"
@@ -56,10 +56,10 @@ services:
       - --limit
       - "10"
     environment:
-      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}
+      - WEBSEARCH_CONFIG_PATH=${WEBSEARCH_CONFIG_PATH:-/app/config.yaml}
     volumes:
       - ./output:/app/output
-      - ./config/config.yaml:/app/config/config.yaml:ro
+      - ./config.yaml:/app/config.yaml:ro
     restart: unless-stopped
     depends_on:
       websearch:

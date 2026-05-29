@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    WEBSEARCH_CONFIG_PATH=/app/config/config.yaml
+    WEBSEARCH_CONFIG_PATH=/app/config.yaml
 
 WORKDIR /app
 
@@ -49,11 +49,11 @@ COPY main.py /app/main.py
 COPY schema /app/schema
 COPY utils /app/utils
 COPY prompt /app/prompt
-COPY config/config.yaml /app/config/config.yaml
-COPY config/searxng-settings.yml /etc/searxng/settings.yml
+COPY config.yaml /app/config.yaml
+COPY searxng-settings.yml /etc/searxng/settings.yml
 COPY entrypoint.sh /app/entrypoint.sh
 
-RUN mkdir -p /etc/searxng /app/output /app/config \
+RUN mkdir -p /etc/searxng /app/output \
     && chmod +x /app/entrypoint.sh
 
 EXPOSE 8080 9000

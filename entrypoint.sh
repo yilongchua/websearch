@@ -3,7 +3,7 @@ set -euo pipefail
 
 SEARXNG_SECRET_KEY="${SEARXNG_SECRET_KEY:-}"
 
-export WEBSEARCH_CONFIG_PATH="${WEBSEARCH_CONFIG_PATH:-/app/config/config.yaml}"
+export WEBSEARCH_CONFIG_PATH="${WEBSEARCH_CONFIG_PATH:-/app/config.yaml}"
 
 readarray -t _runtime_values < <(python - <<'PY'
 from urllib.parse import urlparse

@@ -10,6 +10,8 @@ No API keys required. Download it, run Docker Compose, and start calling `localh
 
 That is the real purpose of this project: a practical web search tool you can give to agents without creating accounts, rotating third-party keys, or teaching every app a different search provider contract. It is not magic. Public search engines and target websites can still rate-limit, block, or return messy pages. But the service is local, inspectable, configurable, and ready to sit behind agentic tool calls.
 
+As every senior developer eventually learns: the best API key is the one you did not have to put in a secret manager at 2 a.m.
+
 ## What You Get
 
 - `POST /search`: JSON-first search endpoint for applications and scripts.
@@ -59,6 +61,8 @@ Default timing knobs:
 | Whole API/tool call | `120s` | `server.request_timeout_seconds` caps `/search` and MCP tool calls. |
 
 Healthy searches often complete in `5-20s`. Slow or blocked sites can hit the configured timeout envelope. For agent swarms, tune concurrency before raising timeouts.
+
+Timeouts are not pessimism; they are optimism with an exit strategy.
 
 ## Quick Start
 
@@ -183,9 +187,10 @@ Recommended local container counts:
 | Deep research bursts | `8-10` |
 | Heavy local max | `10-12`, only if CPU/RAM stay healthy |
 
+
 ## Configuration
 
-Runtime configuration lives in `config/config.yaml`.
+Runtime configuration lives in `config.yaml`.
 
 Admission control:
 
@@ -232,7 +237,7 @@ tools:
     api_path: /search
 ```
 
-Keep extract, language, and engine settings in this service's `config/config.yaml`, not in each agent backend.
+Keep extract, language, and engine settings in this service's `config.yaml`, not in each agent backend.
 
 ## Project Structure
 
@@ -241,8 +246,8 @@ main.py                    FastAPI app, CLI, REST, and MCP endpoint
 schema/                    Pydantic request and response models
 utils/                     Config, pipeline, cleanup, events, retention, packaging
 prompt/body_cleanup_prompt.j2
-config/config.yaml         Websearch runtime config
-config/searxng-settings.yml
+config.yaml               Websearch runtime config
+searxng-settings.yml
 docs/diagrams/             README PNG diagrams
 scripts/                   Scaling, UAT, and pruning helpers
 ```
