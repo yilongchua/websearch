@@ -14,14 +14,14 @@ settings_path = str(get_config_value("runtime.searxng_settings_path", "/etc/sear
 api_host = str(get_config_value("server.api_host", "0.0.0.0"))
 api_port = int(get_config_value("server.api_port", 9000))
 searxng_base_url = str(get_config_value("service.searxng_base_url", "http://127.0.0.1:8080"))
+searxng_bind_host = str(get_config_value("service.searxng_bind_host", "0.0.0.0"))
 parsed = urlparse(searxng_base_url)
-searxng_host = parsed.hostname or "0.0.0.0"
 searxng_port = parsed.port or 8080
 
 print(settings_path)
 print(api_host)
 print(api_port)
-print(searxng_host)
+print(searxng_bind_host)
 print(searxng_port)
 PY
 )

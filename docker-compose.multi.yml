@@ -28,9 +28,10 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
       - ./prompt:/app/prompt:ro
-    expose:
-      - "9000"
-      - "8080"
+    ports:
+      - target: 8080
+        published: 0
+        protocol: tcp
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
       interval: 20s
