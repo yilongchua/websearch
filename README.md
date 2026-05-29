@@ -75,8 +75,6 @@ echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" >> .env
 docker compose up -d --build
 ```
 
-`SEARXNG_SECRET_KEY` is still worth keeping random even for local runs (the port is not secret; this key is for app-level signing/security).
-
 Check it:
 
 ```bash
