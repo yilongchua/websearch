@@ -175,6 +175,10 @@ Run the load-balancer UAT:
 python scripts/uat_lb_live_test.py
 ```
 
+Dashboard live test view:
+
+![Dashboard Live Test](docs/diagrams/uat-live-test-dashboard.png)
+
 Watch dashboard logs:
 
 ```bash
