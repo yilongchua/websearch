@@ -43,6 +43,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "safesearch": 1,
         "categories": [],
         "engines": [],
+        "blocklist_enabled": True,
+        "blocklist_lookback_seconds": 604800,
+        "blocklist_min_failures": 2,
+        "blocklist_max_pages": 3,
     },
     "crawler": {
         "mode": "cli",

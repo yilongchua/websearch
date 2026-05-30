@@ -9,10 +9,58 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+
+
+# Common multi-part public suffixes so that e.g. "bbc.co.uk" collapses to
+# "bbc.co.uk" rather than the meaningless "co.uk". Not exhaustive, but covers
+# the suffixes most likely to show up in search results.
+_MULTI_PART_SUFFIXES = frozenset(
+    {
+        "co.uk", "org.uk", "gov.uk", "ac.uk", "me.uk", "ltd.uk", "net.uk",
+        "com.au", "net.au", "org.au", "edu.au", "gov.au", "id.au",
+        "co.nz", "net.nz", "org.nz", "govt.nz",
+        "co.jp", "or.jp", "ne.jp", "ac.jp", "go.jp",
+        "co.kr", "or.kr", "co.in", "net.in", "org.in", "gen.in", "firm.in",
+        "com.br", "net.br", "org.br", "gov.br",
+        "com.cn", "net.cn", "org.cn", "gov.cn",
+        "com.sg", "edu.sg", "gov.sg",
+        "com.hk", "org.hk", "gov.hk",
+        "com.tw", "org.tw",
+        "co.za", "org.za", "gov.za",
+        "com.mx", "com.tr", "com.ar", "com.ru", "com.ua", "com.my",
+        "co.id", "co.th", "com.ph", "com.vn", "com.pk",
+    }
+)
 
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def registrable_domain(value: str) -> str:
+    """Collapse a URL or host to its registrable root domain.
+
+    "https://m.facebook.com/foo" and "www.facebook.com" both become
+    "facebook.com" so a single failed page blocks the whole site.
+    """
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    # urlsplit needs a scheme (or leading //) to populate netloc.
+    if "://" not in raw:
+        raw = "//" + raw
+    host = urlsplit(raw).netloc
+    host = host.split("@")[-1].split(":")[0].strip(".")
+    if not host:
+        return ""
+    labels = host.split(".")
+    if len(labels) <= 2:
+        return host
+    last_two = ".".join(labels[-2:])
+    if last_two in _MULTI_PART_SUFFIXES:
+        return ".".join(labels[-3:])
+    return last_two
 
 
 def _to_epoch(ts: str) -> float:
@@ -80,6 +128,49 @@ def iter_events(*, output_dir: str | Path, since_ts: float | None = None) -> lis
             continue
     events.sort(key=lambda item: str(item.get("timestamp") or ""))
     return events
+
+
+def failed_domains(
+    *,
+    output_dir: str | Path,
+    lookback_seconds: int = 604800,
+    min_failures: int = 2,
+) -> set[str]:
+    """Root domains to skip, derived from recent source extraction events.
+
+    A URL only counts as failed if it produced at least one ``source_failed``
+    event and *no* ``source_succeeded`` event — extraction emits one event per
+    mode (http/cli/library), so a URL that fell back to a working mode must not
+    be treated as a failure. A root domain is blocked once it accumulates
+    ``min_failures`` distinct failed URLs within the lookback window.
+    """
+    since_ts = time.time() - max(0, int(lookback_seconds)) if lookback_seconds else None
+    succeeded_urls: set[str] = set()
+    failed_urls: set[str] = set()
+
+    for event in iter_events(output_dir=output_dir, since_ts=since_ts):
+        event_type = str(event.get("event_type") or "")
+        if not event_type.startswith("source_"):
+            continue
+        url = str(event.get("url") or "").strip()
+        if not url:
+            continue
+        if event_type == "source_succeeded":
+            succeeded_urls.add(url)
+        elif event_type == "source_failed":
+            failed_urls.add(url)
+
+    domain_failures: dict[str, int] = {}
+    for url in failed_urls:
+        if url in succeeded_urls:
+            continue
+        domain = registrable_domain(url)
+        if not domain:
+            continue
+        domain_failures[domain] = domain_failures.get(domain, 0) + 1
+
+    threshold = max(1, int(min_failures))
+    return {domain for domain, count in domain_failures.items() if count >= threshold}
 
 
 def prune_events(

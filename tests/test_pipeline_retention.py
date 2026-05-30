@@ -7,7 +7,15 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from utils import pipeline
-from utils.events import append_event, list_query_events, list_source_events, prune_events, summarize_events
+from utils.events import (
+    append_event,
+    failed_domains,
+    list_query_events,
+    list_source_events,
+    prune_events,
+    registrable_domain,
+    summarize_events,
+)
 from utils.output_retention import THROTTLE_MARKER_FILENAME, maybe_prune_markdown_daily, prune_markdown_files
 from utils.packaging import write_package
 
@@ -203,7 +211,7 @@ def test_run_query_triggers_daily_prune(monkeypatch, tmp_path: Path):
         calls["event_prune"] += 1
         return {"events_deleted": 0, "event_files_touched": 0, "event_files_deleted": 0}
 
-    async def fake_query(_query: str):
+    async def fake_query(_query: str, *, blocklist=None):
         return [{"title": "A", "url": "https://a", "snippet": "aa"}]
 
     async def fake_enrich(results, *, query_id: str, output_dir: str, source_statuses: list[dict]):
@@ -301,3 +309,94 @@ def test_enrich_results_skips_failed_sources_and_continues_until_top_k(monkeypat
     assert "extracted_content" not in enriched[0]
     assert enriched[1]["extracted_content"].startswith("content for https://two.example")
     assert enriched[2]["extracted_content"].startswith("content for https://three.example")
+
+
+def test_registrable_domain_collapses_to_root():
+    assert registrable_domain("https://m.facebook.com/some/path") == "facebook.com"
+    assert registrable_domain("www.facebook.com") == "facebook.com"
+    assert registrable_domain("https://news.bbc.co.uk/story") == "bbc.co.uk"
+    assert registrable_domain("http://example.com:8080/x") == "example.com"
+    assert registrable_domain("example.com") == "example.com"
+    assert registrable_domain("") == ""
+
+
+def test_failed_domains_threshold_and_mode_fallback(tmp_path: Path):
+    # URL fails on http but succeeds via cli -> NOT a failure (per-mode events).
+    append_event(output_dir=tmp_path, event={"event_type": "source_failed", "status": "failed", "query_id": "q1", "url": "https://recovers.com/1", "mode": "http"})
+    append_event(output_dir=tmp_path, event={"event_type": "source_succeeded", "status": "succeeded", "query_id": "q1", "url": "https://recovers.com/1", "mode": "cli"})
+
+    # Two distinct failed URLs under blocked.com -> meets default threshold of 2.
+    append_event(output_dir=tmp_path, event={"event_type": "source_failed", "status": "failed", "query_id": "q1", "url": "https://blocked.com/a", "mode": "http"})
+    append_event(output_dir=tmp_path, event={"event_type": "source_failed", "status": "failed", "query_id": "q2", "url": "https://blocked.com/b", "mode": "cli"})
+
+    # Subdomains collapse to the same root domain (facebook.com).
+    append_event(output_dir=tmp_path, event={"event_type": "source_failed", "status": "failed", "query_id": "q1", "url": "https://www.facebook.com/x", "mode": "http"})
+    append_event(output_dir=tmp_path, event={"event_type": "source_failed", "status": "failed", "query_id": "q2", "url": "https://m.facebook.com/y", "mode": "http"})
+
+    # Single failure -> below threshold of 2.
+    append_event(output_dir=tmp_path, event={"event_type": "source_failed", "status": "failed", "query_id": "q1", "url": "https://once.com/1", "mode": "http"})
+
+    blocked = failed_domains(output_dir=tmp_path, lookback_seconds=604800, min_failures=2)
+    assert blocked == {"blocked.com", "facebook.com"}
+
+    relaxed = failed_domains(output_dir=tmp_path, lookback_seconds=604800, min_failures=1)
+    assert "once.com" in relaxed
+    assert "recovers.com" not in relaxed
+
+
+def test_query_searxng_filters_blocklist_and_pages_to_refill(monkeypatch):
+    pages: dict[int, list[dict]] = {
+        1: [
+            {"title": "x", "url": "https://blocked.com/a", "content": "no"},
+            {"title": "g1", "url": "https://good1.com/x", "content": "yes"},
+            {"title": "x", "url": "https://blocked.com/b", "content": "no"},
+            {"title": "g2", "url": "https://good2.com/y", "content": "yes"},
+        ],
+        2: [
+            {"title": "g1dup", "url": "https://good1.com/x", "content": "dup"},
+            {"title": "g3", "url": "https://good3.com/z", "content": "yes"},
+        ],
+    }
+    fetched_pages: list[int] = []
+
+    async def fake_fetch(_endpoint: str, params: dict):
+        page = int(params.get("pageno", 1))
+        fetched_pages.append(page)
+        return {"results": pages.get(page, [])}
+
+    def fake_config(path: str, default):
+        mapping = {
+            "search.max_results": 3,
+            "search.blocklist_max_pages": 3,
+        }
+        return mapping.get(path, default)
+
+    monkeypatch.setattr(pipeline, "_searxng_fetch", fake_fetch)
+    monkeypatch.setattr(pipeline, "get_config_value", fake_config)
+
+    results = asyncio.run(pipeline._query_searxng("hello", blocklist={"blocked.com"}))
+
+    urls = [item["url"] for item in results]
+    assert urls == ["https://good1.com/x", "https://good2.com/y", "https://good3.com/z"]
+    # Page 1 left us one short after filtering, so page 2 was fetched to refill.
+    assert fetched_pages == [1, 2]
+
+
+def test_query_searxng_single_page_without_blocklist(monkeypatch):
+    fetched_pages: list[int] = []
+
+    async def fake_fetch(_endpoint: str, params: dict):
+        fetched_pages.append(int(params.get("pageno", 1)))
+        return {"results": [{"title": "g1", "url": "https://good1.com/x", "content": "yes"}]}
+
+    def fake_config(path: str, default):
+        return {"search.max_results": 3, "search.blocklist_max_pages": 3}.get(path, default)
+
+    monkeypatch.setattr(pipeline, "_searxng_fetch", fake_fetch)
+    monkeypatch.setattr(pipeline, "get_config_value", fake_config)
+
+    results = asyncio.run(pipeline._query_searxng("hello"))
+
+    assert [item["url"] for item in results] == ["https://good1.com/x"]
+    # No blocklist -> never paginates past the first response.
+    assert fetched_pages == [1]

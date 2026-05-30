@@ -43,6 +43,12 @@ search:
   safesearch: 1
   categories: []
   engines: []
+  # Domain blocklist: skip search results whose root domain has racked up
+  # repeated extraction failures (derived from source_failed events).
+  blocklist_enabled: true
+  blocklist_lookback_seconds: 604800   # how far back failures are counted (default: match source_failure retention)
+  blocklist_min_failures: 2            # distinct failed URLs under a root domain before it is blocked
+  blocklist_max_pages: 3               # extra SearXNG pages to pull to refill the pool after filtering
 
 crawler:
   mode: "cli"           # cli | library

@@ -12,7 +12,7 @@ import httpx
 
 from .cleanup import assess_content_quality
 from .config import get_config_value
-from .events import append_event
+from .events import append_event, failed_domains, registrable_domain
 from .output_retention import maybe_prune_event_logs_daily, maybe_prune_markdown_daily
 from .packaging import write_package
 
@@ -321,7 +321,32 @@ async def _extract_best_content(
     return cleaned_text or best_text, best_quality
 
 
-async def _query_searxng(query: str) -> list[dict[str, Any]]:
+async def _searxng_fetch(endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
+    max_retries = max(0, int(get_config_value("search.searxng_max_retries", 2)))
+    retry_backoff_seconds = max(0.0, float(get_config_value("search.searxng_retry_backoff_seconds", 1.0)))
+    last_exc: Exception | None = None
+
+    for attempt in range(max_retries + 1):
+        try:
+            if _SEARX_CLIENT is not None:
+                response = await _SEARX_CLIENT.get(endpoint, params=params)
+                response.raise_for_status()
+                return response.json()
+            async with httpx.AsyncClient(timeout=_searxng_timeout_seconds()) as client:
+                response = await client.get(endpoint, params=params)
+                response.raise_for_status()
+                return response.json()
+        except Exception as exc:
+            last_exc = exc
+            if attempt >= max_retries or not _is_retryable_searxng_error(exc):
+                raise
+            await asyncio.sleep(retry_backoff_seconds * (attempt + 1))
+
+    raise RuntimeError("SearXNG query failed") from last_exc
+
+
+async def _query_searxng(query: str, *, blocklist: set[str] | None = None) -> list[dict[str, Any]]:
+    blocklist = blocklist or set()
     endpoint = f"{str(get_config_value('service.searxng_base_url', 'http://127.0.0.1:8080')).rstrip('/')}/search"
     params: dict[str, Any] = {
         "q": query,
@@ -344,49 +369,43 @@ async def _query_searxng(query: str) -> list[dict[str, Any]]:
     if isinstance(engines, list) and engines:
         params["engines"] = ",".join(str(item).strip() for item in engines if str(item).strip())
 
-    max_retries = max(0, int(get_config_value("search.searxng_max_retries", 2)))
-    retry_backoff_seconds = max(0.0, float(get_config_value("search.searxng_retry_backoff_seconds", 1.0)))
-    last_exc: Exception | None = None
-
-    for attempt in range(max_retries + 1):
-        try:
-            if _SEARX_CLIENT is not None:
-                response = await _SEARX_CLIENT.get(endpoint, params=params)
-                response.raise_for_status()
-                body = response.json()
-            else:
-                async with httpx.AsyncClient(timeout=_searxng_timeout_seconds()) as client:
-                    response = await client.get(endpoint, params=params)
-                    response.raise_for_status()
-                    body = response.json()
-            break
-        except Exception as exc:
-            last_exc = exc
-            if attempt >= max_retries or not _is_retryable_searxng_error(exc):
-                raise
-            await asyncio.sleep(retry_backoff_seconds * (attempt + 1))
-    else:
-        raise RuntimeError("SearXNG query failed") from last_exc
-
     max_results = int(get_config_value("search.max_results", 5))
-    raw_results = body.get("results", []) if isinstance(body, dict) else []
+    # Only page past the first response when the blocklist might thin the pool;
+    # this keeps the common (no-blocklist) path to a single request.
+    max_pages = max(1, int(get_config_value("search.blocklist_max_pages", 3))) if blocklist else 1
+
     normalized: list[dict[str, Any]] = []
     seen: set[str] = set()
 
-    for item in raw_results:
-        if not isinstance(item, dict):
-            continue
-        url = str(item.get("url") or "").strip()
-        if not url or url in seen:
-            continue
-        seen.add(url)
-        normalized.append(
-            {
-                "title": str(item.get("title") or "").strip(),
-                "url": url,
-                "snippet": str(item.get("content") or item.get("snippet") or item.get("description") or "").strip(),
-            }
-        )
+    for page in range(1, max_pages + 1):
+        page_params = dict(params)
+        if page > 1:
+            page_params["pageno"] = page
+
+        body = await _searxng_fetch(endpoint, page_params)
+        raw_results = body.get("results", []) if isinstance(body, dict) else []
+        if not raw_results:
+            break
+
+        for item in raw_results:
+            if not isinstance(item, dict):
+                continue
+            url = str(item.get("url") or "").strip()
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            if blocklist and registrable_domain(url) in blocklist:
+                continue
+            normalized.append(
+                {
+                    "title": str(item.get("title") or "").strip(),
+                    "url": url,
+                    "snippet": str(item.get("content") or item.get("snippet") or item.get("description") or "").strip(),
+                }
+            )
+            if len(normalized) >= max_results:
+                break
+
         if len(normalized) >= max_results:
             break
 
@@ -451,11 +470,19 @@ async def run_query(*, query: str, write_markdown_package: bool = True, package_
     source_statuses: list[dict[str, Any]] = []
     started = time.perf_counter()
 
+    blocklist: set[str] = set()
+    if bool(get_config_value("search.blocklist_enabled", True)):
+        blocklist = failed_domains(
+            output_dir=output_dir,
+            lookback_seconds=int(get_config_value("search.blocklist_lookback_seconds", get_config_value("retention.source_failure_seconds", 604800))),
+            min_failures=int(get_config_value("search.blocklist_min_failures", 2)),
+        )
+
     append_event(output_dir=output_dir, event={"event_type": "query_started", "query_id": query_id, "query": query, "status": "started"})
 
     try:
         searx_start = time.perf_counter()
-        results = await _query_searxng(query)
+        results = await _query_searxng(query, blocklist=blocklist)
         searx_ms = (time.perf_counter() - searx_start) * 1000
 
         enrich_start = time.perf_counter()
@@ -490,6 +517,7 @@ async def run_query(*, query: str, write_markdown_package: bool = True, package_
                 "enrich_ms": round(enrich_ms, 2),
             }
             payload["source_statuses"] = source_statuses
+            payload["blocked_domains"] = sorted(blocklist)
 
         append_event(
             output_dir=output_dir,
